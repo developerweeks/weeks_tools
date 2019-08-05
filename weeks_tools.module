@@ -1,0 +1,401 @@
+<?php
+
+/**
+ * @file
+ * The Weeks Tools Module file, for Michael Weeks.
+ */
+
+/**
+ * Implements hook_menu().
+ */
+function weeks_tools_menu() {
+  $items = array();
+
+  $items['admin/config/system/weeks'] = array(
+    'title' => 'Dev tools of Michael Weeks',
+    'description' => 'This module holds little helpers that have been useful',
+    'type' => MENU_NORMAL_ITEM,
+    'page callback' => 'drupal_get_form',
+    'page arguments' => array('weeks_tools_form'),
+    'access arguments' => array('administer site configuration'),
+    'file' => 'includes/module_missing_message_fixer.admin.inc',
+  );
+
+  return $items;
+}
+
+/*
+ * A quick helper function for revealing contents and structure
+ *   -= Recursive =-
+ * @element  the variable to be explored
+ * @depth  how many levels into the element to explore
+ * @lead  seed this if you want the variable's name or some other clue at the begining of each line
+ * @cap  termination of a line, when the end or the depth is reached
+ * @return a big string holding copy-paste ready reference strings for the items in the element, each starting with $lead and ending with $cap
+ */
+function weeks_tools_explain($element = array(), $depth = 1, $lead = '', $cap = NULL) {
+  $string = '';
+  $cap = is_null($cap)?variable_get('wt_line_separator', ' <br>'):$cap;  
+  /* 
+   might be <br> for message prints
+   or \n for watchdog entries
+   or a unique character (§ or |) for serialization
+   */
+  if ($depth < 1) {
+    // recursion end case
+    return '';    
+  }
+  if (is_array($element)) {
+    foreach ($element as $key => $part) {
+      $string .= ($depth == 1) ? '["' . $key . '"]' : weeks_tools_explain($part, $depth - 1, $lead . '["' . $key . '"]');
+    }
+  }
+  elseif (is_object($element)) {
+    foreach ($element as $key => $part) {
+      $string .= ($depth == 1) ? '->' . $key : weeks_tools_explain($part, $depth - 1, $lead . '->' . $key);
+    }
+  }
+  else {
+    $string .= $lead . ' = ' . $element . $cap;
+  }
+  return $string;
+}
+/*
+ * A tool for searching out a specific key or value from a large variable structure
+ *   -= Recursive =-
+ * @element  the variable to be explored
+ * @target the string being searched for
+ * @depth  how many levels into the element to explore
+ * @cap  termination of a line, when the end or the depth is reached
+ * @return a big string holding the reference(s) of the sought after string
+ */
+function weeks_tools_dig($element = array(), $target, $depth = 1, $cap = NULL) {
+  $string = '';
+  $cap = empty($cap)?variable_get('wt_line_separator',"\n"):$cap;  // might be <br> or \n or a unique character for serialization
+  if ($depth < 1) {
+    return $cap;
+  }
+  if (is_array($element)) {
+    foreach ($element as $key => $part) {
+      $string = '["' . $key . '"]';
+      if( $depth > 1 )
+        $string .= weeks_tools_dig($part, $target, $depth - 1, $cap);
+      else
+        $string .= $cap;
+      if( strpos( $string, $target) !== FALSE )
+        return $string;
+    }
+  }
+  elseif (is_object($element)) {
+    foreach ($element as $key => $part) {
+      $string = '->' . $key;
+      if( $depth > 1 )
+        $string .= weeks_tools_dig($part, $target, $depth - 1, $cap);
+      else
+        $string .= $cap;
+      if( strpos( $string, $target) !== FALSE )
+        return $string;
+    }
+  }
+  else {
+    if( strpos( $element, $target) !== FALSE )
+      return $element . $cap;
+  }
+  return NULL;
+}
+
+/**
+ * Given a node id, this returns the node's type or NULL if it doesn't exist.
+ * @param $nid
+ * @return {String|NULL}
+ */
+function weeks_tools_type_from_nid($nid) {
+  $query = db_select('node', 'n')
+    ->fields('n', array('type'))
+    ->condition('n.nid', $nid)
+    ->execute();
+  $result = $query->fetchObject();
+  return $result->type;
+}
+
+/*
+ * helper function for removing html from report contents
+ * Strip only selcted tags, strip defined constant tags if none given
+ * written for use in THEME_preprocess_node functions
+ * Growth order of O(n) where n is the number of tags, so defaults to O(7)
+ */
+function weeks_tools_strip_only($str, $tags = NULL, $keep = TRUE) {
+  $UNWANTED = variable_get('wt_unwanted_tags', 'span/h1/h2/h3/h4/div/strong');
+  if ($tags == NULL) {
+    $tags = explode('/', $UNWANTED);
+  }
+  if (!is_array($tags)) {
+    // must have been passed a condensed string of target tags
+    $tags = (strpos($str, '>') !== false ? explode('>', str_replace('<', '', $tags)) : array($tags));
+    if (end($tags) == '') {
+      array_pop($tags);
+    }
+  }
+  foreach ($tags as $tag) {
+    if( $keep ) {
+      $str = preg_replace('#</?' . $tag . '[^>]*>#is', '', $str);
+    } else {
+      $cleaning = TRUE;
+      while( $cleaning ) {
+        // regex probably doesnt work here
+        $clipFrom = strpos( $str, '<' . $tag );
+        $clipTo = strpos( $str, '</' . $tag , $clipFrom );
+        $clipTo = strpos( $str, '>' , $clipTo ); // find end of closing tag
+        $str = substr($str, 0, $clipFrom) . substr( $str, $clipTo );
+        if( substr_count ( $str, '<'. $tag) < 1 ) {
+          $cleaning = FALSE;
+        }
+      }
+    }
+  }
+  return $str;
+}
+/**
+ * Compress text array into a non-duplicate string
+ * 
+ * growth order of O(n)
+ */
+function weeks_tools_aggregate_text($texts, $strip = NULL) {
+  $result = false;
+  foreach ($texts as $text) {
+    if (strpos($result, $text) === FALSE)  //only if this string is nowhere in result
+      $result .= $text;
+  }
+  if(TRUE == $strip) {
+    // the usual suspects
+    return weeks_tools_strip_only($result);
+  }
+  if (!empty($strip)) {
+    // we have specific strip targets
+    return weeks_tools_strip_only($result, $strip);
+  }
+  // dont need to clean up
+  return $result;
+}
+/*
+ * very small helper function, should have no name collision
+ * makes an int into a dollar amount with decimal
+ * it was important for a theming issue to have this reformated
+ * Growth order of O(1)
+ */
+function weeks_tools_make_dollar($amount){
+  if(!is_numeric($amount)){
+    // what is this doing here?
+    return NULL;
+  }
+  if( strpos($amount, '.') === FALSE) {
+    $amount = $amount.'.00';
+  }
+  $amount = '$'.$amount;
+  return $amount;
+}
+
+/*
+ * encountering an odd issue where some nodes still exist in the node table but cannot load
+ * this tool written to disprove an idea, and be evoked by drush
+ * growth order of O(n)
+ */
+function weeks_tools_stress_load( $nid = NULL, $stress = 10 ){
+  print "repeat loading of nodes\n";
+  for ($i = 1; $i <= $stress; $i++) {
+    if( empty($nid) ){
+      $query = db_select('node', 'n')
+        ->fields('n', array('nid', 'title') )
+        ->condition('type', 'mmg_custom_profile_page')
+        ->orderBy('RAND()')
+        ->range(0, 1);
+      $result = $query->execute()->fetchAssoc();
+      $nid = $result['nid'];
+    }
+    $oNode = node_load($nid);
+    if( $oNode === FALSE ){
+      print "Failed\n";
+    } else {
+      print "Worked\n";
+    }
+    unset($oNode);
+  }
+}
+
+/* Identify the title changes taking place
+ *
+ * growth order of O(n)
+ */
+function weeks_tools_string_diff( $first, $second, $verbose = TRUE, $separator = 'r'){
+    $s = array();
+    switch ($separator) {
+        // separation markers
+        // what other formats do we want, wiki? html spans?
+        case "markdown":
+        case "m":
+            $s = array('~~','~~**','**'); 
+            // markdown strikethrough and bold
+            break;
+        case "regex":
+        case "r":
+        default:
+            $s = array('(', '|', ')'); 
+            // regex string pattern syntax, felt like good default
+    }
+    $result = '';
+    $count = (strlen($first) > strlen($second))?strlen($first):strlen($second);
+    // control and hold pieces for making the diff pretty
+    $changed = FALSE;
+    $a = '';
+    $b = '';
+    for($i = 0; $i <= $count; $i++){
+      // using php quirk to treat strings like char arrays
+        if( $first[$i] != $second[$i] ) {
+            $a .= $first[$i];
+            $b .= $second[$i];
+            $changed = TRUE;
+        } else {
+            if($changed){
+                // we found a difference, and it is done, so record
+                $changed = FALSE;
+                $result .= $s[0] . $a .$s[1]. $b .$s[2];
+                $a = '';
+                $b = '';
+            }
+            if($verbose){
+                // we want the other parts of the string(s) too
+                $result .= $first[$i];
+            }
+        }
+    }
+    if( !empty($a) || !empty($b) ) {
+        // if the strings ended differently
+        $result .= $s[0] . $a .$s[1]. $b .$s[2];
+    }
+    return $result;
+}
+
+
+
+/**
+ * @return string[]
+ *   Format: $[$column_key] = $cell
+ */
+function _weeks_tools_get_table_header() {
+
+  return array(
+    'name' => 'Name',
+    'type' => 'Type',
+    'filename' => 'Filename',
+  );
+}
+
+/**
+ * Produces one table row for each missing module.
+ *
+ * The table rows are suitable for drush and for the admin UI.
+ *
+ * @return array[]
+ *   Format: $[$extension_name][$column_key] = $cell
+ */
+function _weeks_tools_get_table_rows() {
+
+  // These are special modules that have their own patches already.
+  // This will help eliminate some of the brute force of this module.
+  $special = array(
+    'adminimal_theme' => 'https://www.drupal.org/node/2763581',
+    'content' => 'https://www.drupal.org/node/2763555',
+    'field_collection_table' => 'https://www.drupal.org/node/2764331',
+  );
+
+  // Grab all the modules in the system table.
+  /** @var \DatabaseStatementBase|\DatabaseStatementInterface $query */
+  $query = db_query("SELECT filename, type, name FROM {system}");
+
+  $rows = array();
+  // Go through the query and check to see if the module exists in the directory.
+  foreach ($query->fetchAll() as $record) {
+
+    if ($record->name === 'default') {
+      continue;
+    }
+
+    // Add exception to this since content module seems to be ubercart sad only.
+    if ($record->name === 'content' && !module_exists('ubercart')) {
+      $rows[$record->filename] = array(
+        'name' => $record->name,
+        'type' => $record->type,
+        'filename' => $record->filename,
+      );
+      continue;
+    }
+
+    if (array_key_exists($record->name, $special)) {
+      // Everyone else fails into here.
+      // Set the message.
+      $msg = t('The @module module has a patch. See <a href="@link" target="_blank">this issue</a> for more information.  It <strong>WILL NOT</strong> be removed by Module Missing Message Fixer.', array(
+        '@module' => $record->name,
+        '@link' => $special[$record->name],
+      ));
+      // Now print it!
+      drupal_set_message($msg, 'status', FALSE);
+      continue;
+    }
+
+    // Grab the checker.
+    $filename = drupal_get_filename(
+      $record->type,
+      $record->name,
+      $record->filename,
+      FALSE);
+
+    if ($filename === NULL) {
+      // Report this module in the table.
+      $rows[$record->filename] = array(
+        'name' => $record->name,
+        'type' => $record->type,
+        'filename' => $record->filename,
+      );
+      continue;
+    }
+
+    $message = NULL;
+    $replacements = array(
+      '@name' => $record->name,
+      '@type' => $record->type,
+      '@file' => $filename,
+    );
+    if (!file_exists($filename)) {
+      // This case is unexpected, because drupal_get_filename() should take care
+      // of it already.
+      $message = 'The file @file for @name @type is missing.';
+    }
+    elseif (!is_readable($filename)) {
+      // This case is unexpected, because drupal_get_filename() should take care
+      // of it already.
+      $message = 'The file @file for @name @type is not readable.';
+    }
+    else {
+      // Verify if *.info file exists. See https://www.drupal.org/node/2789993#comment-12306555
+      $info_filename = dirname($filename) . '/' . $record->name . '.info';
+      $replacements['@info_file'] = $info_filename;
+      if (!file_exists($info_filename)) {
+        $message = 'The *.info file @info_file for @name @type is missing.';
+
+      }
+      elseif (!is_readable($info_filename)) {
+        $message = 'The *.info file @info_file for @name @type is not readable.';
+      }
+    }
+
+    if ($message !== NULL) {
+      // This case should never occur.
+      drupal_set_message(
+        t($message, $replacements),
+        'warning',
+        FALSE);
+    }
+  }
+
+  return $rows;
+}

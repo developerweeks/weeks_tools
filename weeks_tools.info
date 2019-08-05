@@ -1,0 +1,8 @@
+name = Weeks Tools
+description = Drupal 7 helper functions that have helped
+package = Development
+project = "weeks_tools"
+version = "7.x-1.0"
+core = 7.x
+
+configure = admin/config/system/weeks
