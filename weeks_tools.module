@@ -155,6 +155,7 @@ function weeks_tools_strip_only($str, $tags = NULL, $keep = TRUE) {
   }
   return $str;
 }
+
 /**
  * Compress text array into a non-duplicate string
  * 
@@ -177,6 +178,72 @@ function weeks_tools_aggregate_text($texts, $strip = NULL) {
   // dont need to clean up
   return $result;
 }
+
+/**
+ * Given a field, this scans the database table of that field for the target value and returns node ids.
+ * Created to search for scripts embedded within body fields on nodes.
+ * @param $field the field in question, usually a Long Text type
+ * @param $target the string to be found, defaults to "script" 
+ * @return {Array|NULL}
+ */
+function weeks_tools_field_db_scan($field, $target = 'script') {
+  if(!is_string($field) || !is_string($target)){
+    return NULL;
+    // always check and sanitize inputs to database code
+  }
+
+  // drupal 7 table naming convention
+  $table = 'field_data_'. check_plain($field);
+  $colm = check_plain($field) .'_value';
+  $aim = check_plain($target);
+
+  if( db_table_exists($table) ){
+    // we have a table, scan it
+    $query = db_select($table, 't');
+    $query->join('node', 'n', 'n.nid = t.entity_id');
+    $query->fields('t', array($colm))
+      ->fields('n', array('nid', 'type', 'title'))
+      ->condition($colm, '%' . db_like($aim) . '%', 'LIKE')
+      ->execute();
+    $result = $query->execute();
+    return $result->fetchAllAssoc('nid');
+  }
+  return NULL;
+}
+
+/*
+temporary
+*/
+function _wt_quickie() {
+  $flds = array(
+  'field_article_subheading',
+  'field_author_slogan',
+  'field_author_subheading',
+  'field_body_post_media',
+  'field_center_contact',
+  'field_center_extra',
+  'field_content_footer',
+  'field_content_header',
+  'field_featured_item_blurb',
+  'field_hero_subtitle',
+  'field_highlight_text',
+  'field_itinerary_item_description',
+  'field_post_body',
+  'field_sponsored_partners_desc',
+  'field_summary',
+  'field_text',
+  'field_tip_body',
+  'field_video_description_text',);
+  foreach ($flds as $fld) {
+    print_r($fld ."\n");
+    $findings = weeks_tools_field_db_scan($fld, 'LidThemeComplexScript');
+    foreach ($findings as $nid => $details) {
+      print_r('Match found.  /node/'. $nid .' is a '. $details->type .' node.  '. $details->title ."\n");
+    }
+  }
+}
+
+
 /*
  * very small helper function, should have no name collision
  * makes an int into a dollar amount with decimal
