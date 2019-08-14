@@ -52,6 +52,19 @@ function weeks_tools_drush_command() {
     'bootstrap' => DRUSH_BOOTSTRAP_DRUPAL_FULL
   );
 
+  $items['weeks-tools-complete-field-scan'] = array(
+    'description' => dt("Check field contents in the database for a target string"),
+    'aliases' => array(
+      'wtcf',
+    ),
+    'arguments' => array(
+      'type' => 'type of field to be scanned',
+      'target' => 'the target string, defaults to "script"',
+    ),
+    'bootstrap' => DRUSH_BOOTSTRAP_DRUPAL_FULL
+  );
+
+
   return $items;
 }
 /*
@@ -87,10 +100,56 @@ function drush_weeks_tools_stressor( $nid = NULL, $stress = 10 ) {
  */
 function drush_weeks_tools_field_scan($field, $target = 'script' ) {
   // drush log default type is Notice
-  drush_log(dt('Begin scan of field contents'));
+  drush_log(dt('Begin scan of field contents '. $field), 'ok');
   $findings = weeks_tools_field_db_scan($field, $target);
   foreach ($findings as $nid => $details) {
-    drush_log(dt('Match found.  /node/'. $nid .' is a '. $details->type .' node.  '. $details->title ));
+    drush_log(dt('Match found.  /node/'. $nid .' is a '. $details->type .' node.  '. $details->title ), 'ok');
   }
-  drush_log(dt('Scan complete'));
+  drush_log(dt('Scan complete'),'ok');
 }
+
+/**
+ * Drush command.
+ *
+ * @param string $type
+ *        The machine name of the field type to scan.  A db_query 
+ *          is run check all instances of all fields of this type
+ * @param string $target
+ *        The string to be found
+ */
+function drush_weeks_tools_complete_field_scan($type, $target = 'script' ) {
+  $fields = field_info_field_map();
+  drush_log(dt('Looking for fields of type '. $type), 'ok');
+  foreach ($fields as $field_name => $field) {
+    if ( $field['type'] == $type ){
+      // this is a field of the type we want to scan
+      drush_weeks_tools_field_scan($field_name, $target);
+    }
+  }
+  drush_log(dt('Complete scan complete'),'ok');
+}
+
+/*
+ * field types present on Colorado.com
+addressfield           
+blockreference         
+double_field           
+email                  
+entityreference        
+field_collection       
+file                   
+image                  
+link_field             
+list_boolean           
+list_integer           
+list_text              
+number_integer         
+paragraphs             
+shariff                
+taxonomy_term_reference
+text                   
+text_long              
+text_with_summary      
+video_embed_field      
+viewreference          
+*/

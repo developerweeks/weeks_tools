@@ -361,6 +361,7 @@ function _weeks_tools_get_table_header() {
  * Produces one table row for each missing module.
  *
  * The table rows are suitable for drush and for the admin UI.
+ * Stolen from the Missing Module Message Fixer module
  *
  * @return array[]
  *   Format: $[$extension_name][$column_key] = $cell
