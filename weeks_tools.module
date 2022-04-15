@@ -35,7 +35,7 @@ function weeks_tools_menu() {
  */
 function weeks_tools_explain($element = array(), $depth = 1, $lead = '', $cap = NULL) {
   $string = '';
-  $cap = is_null($cap)?variable_get('wt_line_separator', ' <br>'):$cap;  
+  $cap = is_null($cap)?' <br>':$cap;  
   /* 
    might be <br> for message prints
    or \n for watchdog entries
